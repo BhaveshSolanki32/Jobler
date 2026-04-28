@@ -50,10 +50,15 @@ def jobs_page():
     orch = _orch()
     cfg = orch._config
     top_n = cfg.get("display", {}).get("top_n_jobs", 20)
+    tab = request.args.get("tab", "active")
     all_jobs = orch._repo.get_all()
-    display_jobs = [j for j in all_jobs if j["status"] not in ("rejected", "filter_rejected")][:top_n]
+    _skip = {"rejected", "filter_rejected"}
+    if tab == "archive":
+        display_jobs = [j for j in all_jobs if j["status"] == "done"]
+    else:
+        display_jobs = [j for j in all_jobs if j["status"] not in _skip | {"done"}][:top_n]
     state = orch.state.snapshot()
-    return render_template("jobs.html", jobs=display_jobs, state=state)
+    return render_template("jobs.html", jobs=display_jobs, state=state, tab=tab)
 
 
 @search_bp.route("/search", methods=["POST"])

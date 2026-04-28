@@ -26,6 +26,12 @@ _LABEL_MAP = {
     "city": "current_location",
 }
 
+# Label fragments that indicate a UI control, not a real question
+_UI_NOISE_LABELS = [
+    "deselect", "remove resume", "submit application", "upload resume",
+    "attach resume", "delete", "close modal", "dismiss",
+]
+
 
 def _answer_for_label(label: str, answers: dict) -> str | None:
     lbl = label.lower().strip()
@@ -33,6 +39,18 @@ def _answer_for_label(label: str, answers: dict) -> str | None:
         if fragment in lbl:
             return answers.get(key, "")
     return None
+
+
+def _is_ui_noise(label: str, existing: str) -> bool:
+    """True if this field is a UI control, not a real application question."""
+    lbl = label.lower().strip()
+    # Skip if input_value() returned the label text — spurious LinkedIn behavior
+    if existing.lower().strip() == lbl:
+        return True
+    for frag in _UI_NOISE_LABELS:
+        if frag in lbl:
+            return True
+    return False
 
 
 class LinkedInEasyApplier(Applyable):
@@ -166,12 +184,16 @@ def _is_review_page(page) -> bool:
 
 
 def _save_qa(app_dir: Path, qa: list[dict]) -> None:
-    lines = ["# Application Questions & Answers\n"]
+    # Deduplicate: keep last occurrence of each question
+    seen: dict[str, str] = {}
     for item in qa:
         q = item.get("question", "").strip()
         a = item.get("answer", "").strip()
         if q:
-            lines.append(f"## {q}\n{a}\n")
+            seen[q] = a
+    lines = ["# Application Questions & Answers\n"]
+    for q, a in seen.items():
+        lines.append(f"## {q}\n{a}\n")
     (app_dir / "questions_answered.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -254,12 +276,17 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
             label = _get_label(page, inp)
             existing = (inp.input_value() or "").strip()
             if existing:
-                qa.append({"question": label, "answer": existing})
+                if not _is_ui_noise(label, existing):
+                    qa.append({"question": label, "answer": existing})
                 continue
             ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
             if ans:
                 inp.fill(str(ans))
                 qa.append({"question": label, "answer": str(ans)})
+            else:
+                # Blank field — add as unanswered so user can fill it in review
+                if label and not _is_ui_noise(label, ""):
+                    qa.append({"question": label, "answer": ""})
         except Exception as e:
             logger.debug("Input fill error: %s", e)
 
@@ -271,12 +298,16 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
             label = _get_label(page, ta)
             existing = (ta.input_value() or "").strip()
             if existing:
-                qa.append({"question": label, "answer": existing})
+                if not _is_ui_noise(label, existing):
+                    qa.append({"question": label, "answer": existing})
                 continue
             ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
             if ans:
                 ta.fill(str(ans))
                 qa.append({"question": label, "answer": str(ans)})
+            else:
+                if label and not _is_ui_noise(label, ""):
+                    qa.append({"question": label, "answer": ""})
         except Exception as e:
             logger.debug("Textarea fill error: %s", e)
 
