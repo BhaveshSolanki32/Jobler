@@ -17,8 +17,8 @@ class LinkedInSkill(BaseSiteSkill):
     def extract(self, listing: JobListing) -> JobListing:
         return self._extractor.extract(listing)
 
-    def apply(self, listing: JobListing, answers: dict, resume_path: str) -> ApplicationResult:
-        return self._applier.apply(listing, answers, resume_path)
+    def apply(self, listing: JobListing, answers: dict, resume_path: str, mode: str = "extract") -> ApplicationResult:
+        return self._applier.apply(listing, answers, resume_path, mode=mode)
 
 
 SiteSkillRegistry.register("linkedin.com", LinkedInSkill)

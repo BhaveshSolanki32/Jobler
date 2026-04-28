@@ -37,13 +37,19 @@ def _answer_for_label(label: str, answers: dict) -> str | None:
 
 class LinkedInEasyApplier(Applyable):
     def apply(
-        self, listing: JobListing, answers: dict, resume_path: str
+        self, listing: JobListing, answers: dict, resume_path: str, mode: str = "extract"
     ) -> ApplicationResult:
+        """
+        mode="extract": navigate form, collect Q&A, stop at review page, save to file.
+        mode="submit":  navigate form, fill answers, click submit.
+        """
         driver = BrowserDriver.get_instance()
         job_id = listing.job_id
         url = listing.url
         proof_dir = _JOBLER_ROOT / "jobs" / job_id / "proof"
+        app_dir = _JOBLER_ROOT / "jobs" / job_id / "application"
         proof_dir.mkdir(parents=True, exist_ok=True)
+        app_dir.mkdir(parents=True, exist_ok=True)
 
         def _do(ctx, drv) -> dict:
             screenshots: list[str] = []
@@ -51,45 +57,89 @@ class LinkedInEasyApplier(Applyable):
             try:
                 page.goto(url, timeout=30000, wait_until="domcontentloaded")
                 drv.solve_captcha_if_present(page)
-                time.sleep(2)
+
+                try:
+                    page.wait_for_selector(
+                        "a[aria-label*='Easy Apply'], button[aria-label*='Easy Apply'], button:has-text('Continue as')",
+                        timeout=10000,
+                    )
+                except Exception:
+                    pass
 
                 if _is_auth_required(page):
                     if not _dismiss_auth_popup(page):
-                        return {"success": False, "screenshots": screenshots, "error": "auth_required"}
+                        return {"success": False, "screenshots": screenshots, "error": "auth_required", "pending_review": False}
                     page.goto(url, timeout=30000, wait_until="domcontentloaded")
-                    time.sleep(2)
+                    try:
+                        page.wait_for_selector(
+                            "a[aria-label*='Easy Apply'], button[aria-label*='Easy Apply']",
+                            timeout=10000,
+                        )
+                    except Exception:
+                        pass
 
                 btn = _find_easy_apply_button(page)
                 if not btn:
-                    return {"success": False, "screenshots": screenshots, "error": "no_easy_apply_button"}
+                    return {"success": False, "screenshots": screenshots, "error": "no_easy_apply_button", "pending_review": False}
 
                 btn.click()
-                time.sleep(2)
+                page.wait_for_selector(
+                    "div[data-test-modal-id='easy-apply-modal']",
+                    timeout=10000,
+                )
 
                 ss = drv.screenshot(page, str(proof_dir / "01_easy_apply_opened.png"))
                 screenshots.append(ss)
 
                 if "linkedin.com" not in page.url:
-                    return {"success": False, "screenshots": screenshots, "error": "redirected_to_external_site"}
+                    return {"success": False, "screenshots": screenshots, "error": "redirected_to_external_site", "pending_review": False}
 
+                all_qa: list[dict] = []
                 page_num = 2
+
                 while page_num <= 12:
-                    _fill_page(page, answers, resume_path)
-                    time.sleep(1)
+                    # In submit mode load saved answers, in extract mode use default answers
+                    fill_answers = _load_saved_answers(app_dir) if mode == "submit" else answers
+                    qa = _fill_page(page, fill_answers, resume_path)
+                    all_qa.extend(qa)
+
                     ss = drv.screenshot(page, str(proof_dir / f"{page_num:02d}_form_page.png"))
                     screenshots.append(ss)
-                    nav = _click_next_or_submit(page)
-                    if nav == "submitted":
-                        break
-                    elif nav == "error":
-                        return {"success": False, "screenshots": screenshots, "error": "form_navigation_failed"}
-                    page_num += 1
-                    time.sleep(1.5)
 
-                time.sleep(2)
-                ss = drv.screenshot(page, str(proof_dir / "final_confirmation.png"))
-                screenshots.append(ss)
-                return {"success": True, "screenshots": screenshots, "error": None}
+                    # Check if we're at review page (submit button visible)
+                    if _is_review_page(page):
+                        if mode == "extract":
+                            # Save Q&A and stop — don't submit
+                            _save_qa(app_dir, all_qa)
+                            ss = drv.screenshot(page, str(proof_dir / f"{page_num:02d}_review_page.png"))
+                            screenshots.append(ss)
+                            return {"success": True, "screenshots": screenshots, "error": None, "pending_review": True}
+                        else:
+                            # Submit mode — click submit
+                            submit_btn = page.query_selector("button[data-live-test-easy-apply-submit-button]") \
+                                or page.query_selector("button[aria-label='Submit application']")
+                            if submit_btn and submit_btn.is_visible():
+                                submit_btn.click()
+                                time.sleep(2)
+                                ss = drv.screenshot(page, str(proof_dir / "final_confirmation.png"))
+                                screenshots.append(ss)
+                                return {"success": True, "screenshots": screenshots, "error": None, "pending_review": False}
+                            return {"success": False, "screenshots": screenshots, "error": "submit_button_not_found", "pending_review": False}
+
+                    nav = _click_next_or_review(page)
+                    if nav == "error":
+                        return {"success": False, "screenshots": screenshots, "error": "form_navigation_failed", "pending_review": False}
+
+                    try:
+                        page.wait_for_selector(
+                            "div[data-test-modal-id='easy-apply-modal']",
+                            timeout=5000,
+                        )
+                    except Exception:
+                        pass
+                    page_num += 1
+
+                return {"success": False, "screenshots": screenshots, "error": "form_exceeded_max_pages", "pending_review": False}
 
             except Exception as e:
                 try:
@@ -97,7 +147,7 @@ class LinkedInEasyApplier(Applyable):
                     screenshots.append(ss)
                 except Exception:
                     pass
-                return {"success": False, "screenshots": screenshots, "error": str(e)}
+                return {"success": False, "screenshots": screenshots, "error": str(e), "pending_review": False}
             finally:
                 page.close()
 
@@ -106,24 +156,57 @@ class LinkedInEasyApplier(Applyable):
             success=result["success"],
             screenshots=result["screenshots"],
             error_reason=result["error"],
+            pending_review=result["pending_review"],
         )
+
+
+def _is_review_page(page) -> bool:
+    btn = page.query_selector("button[data-live-test-easy-apply-submit-button]")
+    return bool(btn and btn.is_visible())
+
+
+def _save_qa(app_dir: Path, qa: list[dict]) -> None:
+    lines = ["# Application Questions & Answers\n"]
+    for item in qa:
+        q = item.get("question", "").strip()
+        a = item.get("answer", "").strip()
+        if q:
+            lines.append(f"## {q}\n{a}\n")
+    (app_dir / "questions_answered.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _load_saved_answers(app_dir: Path) -> dict:
+    qa_file = app_dir / "questions_answered.md"
+    if not qa_file.exists():
+        return {}
+    answers = {}
+    current_q = None
+    for line in qa_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            current_q = line[3:].strip()
+        elif current_q and line.strip():
+            answers[current_q.lower()] = line.strip()
+            current_q = None
+    return answers
 
 
 def _find_easy_apply_button(page):
     for sel in [
-        "button.jobs-apply-button[aria-label*='Easy Apply']",
+        "a[aria-label*='Easy Apply']",
         "button[aria-label*='Easy Apply']",
+        "button.jobs-apply-button[aria-label*='Easy Apply']",
         "button.jobs-apply-button",
     ]:
         btn = page.query_selector(sel)
         if btn and btn.is_visible():
             return btn
-    for btn in page.query_selector_all("button"):
-        try:
-            if "easy apply" in (btn.inner_text() or "").lower() and btn.is_visible():
-                return btn
-        except Exception:
-            pass
+    for tag in ["a", "button"]:
+        for btn in page.query_selector_all(tag):
+            try:
+                if "easy apply" in (btn.inner_text() or "").lower() and btn.is_visible():
+                    return btn
+            except Exception:
+                pass
     return None
 
 
@@ -142,10 +225,12 @@ def _get_label(page, element) -> str:
         return ""
 
 
-def _fill_page(page, answers: dict, resume_path: str) -> None:
+def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
+    """Fill all fields on the current modal page. Returns list of {question, answer} dicts."""
+    qa: list[dict] = []
     modal = (
-        page.query_selector("div[role='dialog']")
-        or page.query_selector("div.jobs-easy-apply-content")
+        page.query_selector("div[data-test-modal-id='easy-apply-modal']")
+        or page.query_selector("div[role='dialog']")
         or page
     )
 
@@ -156,6 +241,7 @@ def _fill_page(page, answers: dict, resume_path: str) -> None:
             try:
                 fi.set_input_files(resume_abs)
                 time.sleep(1)
+                qa.append({"question": "Resume", "answer": Path(resume_path).name})
                 break
             except Exception:
                 pass
@@ -165,12 +251,15 @@ def _fill_page(page, answers: dict, resume_path: str) -> None:
         try:
             if not inp.is_visible() or inp.is_disabled():
                 continue
-            if (inp.input_value() or "").strip():
-                continue
             label = _get_label(page, inp)
-            ans = _answer_for_label(label, answers)
+            existing = (inp.input_value() or "").strip()
+            if existing:
+                qa.append({"question": label, "answer": existing})
+                continue
+            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
             if ans:
                 inp.fill(str(ans))
+                qa.append({"question": label, "answer": str(ans)})
         except Exception as e:
             logger.debug("Input fill error: %s", e)
 
@@ -179,30 +268,49 @@ def _fill_page(page, answers: dict, resume_path: str) -> None:
         try:
             if not ta.is_visible() or ta.is_disabled():
                 continue
-            if (ta.input_value() or "").strip():
-                continue
             label = _get_label(page, ta)
-            ans = _answer_for_label(label, answers)
+            existing = (ta.input_value() or "").strip()
+            if existing:
+                qa.append({"question": label, "answer": existing})
+                continue
+            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
             if ans:
                 ta.fill(str(ans))
+                qa.append({"question": label, "answer": str(ans)})
         except Exception as e:
             logger.debug("Textarea fill error: %s", e)
 
-    # Selects — pick first non-empty option
+    # Selects
     for sel_el in modal.query_selector_all("select"):
         try:
             if not sel_el.is_visible():
                 continue
+            label = _get_label(page, sel_el)
             opts = sel_el.query_selector_all("option")
-            for opt in opts[1:]:
-                val = opt.get_attribute("value")
-                if val:
-                    sel_el.select_option(value=val)
-                    break
+            # Check if already has a non-empty selection
+            current_val = sel_el.input_value() if hasattr(sel_el, 'input_value') else ""
+            saved_ans = answers.get(label.lower(), "")
+            if saved_ans:
+                # Try to match saved answer to an option
+                for opt in opts:
+                    opt_text = (opt.inner_text() or "").strip().lower()
+                    if saved_ans.lower() in opt_text or opt_text in saved_ans.lower():
+                        val = opt.get_attribute("value")
+                        if val:
+                            sel_el.select_option(value=val)
+                            qa.append({"question": label, "answer": opt.inner_text().strip()})
+                            break
+            else:
+                for opt in opts[1:]:
+                    val = opt.get_attribute("value")
+                    if val:
+                        sel_el.select_option(value=val)
+                        qa.append({"question": label, "answer": opt.inner_text().strip()})
+                        break
         except Exception as e:
             logger.debug("Select fill error: %s", e)
 
-    # Radio buttons — prefer "Yes" for compliance questions
+    # Radio buttons
     radio_groups: dict[str, list] = {}
     for radio in modal.query_selector_all("input[type='radio']"):
         try:
@@ -210,8 +318,10 @@ def _fill_page(page, answers: dict, resume_path: str) -> None:
             radio_groups.setdefault(name, []).append(radio)
         except Exception:
             pass
-    for group in radio_groups.values():
+    for name, group in radio_groups.items():
         if any(r.is_checked() for r in group):
+            checked = next((r for r in group if r.is_checked()), group[0])
+            qa.append({"question": _get_label(page, group[0]), "answer": _get_label(page, checked)})
             continue
         yes_radio = next(
             (r for r in group if _get_label(page, r).lower() in ("yes", "true")),
@@ -221,25 +331,18 @@ def _fill_page(page, answers: dict, resume_path: str) -> None:
         if target:
             try:
                 target.check()
+                qa.append({"question": name, "answer": _get_label(page, target)})
             except Exception:
                 pass
 
+    return qa
 
-def _click_next_or_submit(page) -> str:
-    for sel in ["button[aria-label='Submit application']", "button[aria-label*='Submit']"]:
-        btn = page.query_selector(sel)
-        if btn and btn.is_visible():
-            try:
-                btn.click()
-                time.sleep(2)
-                return "submitted"
-            except Exception:
-                return "error"
 
+def _click_next_or_review(page) -> str:
+    """Click Review or Next button. Submit is handled separately via _is_review_page."""
     for sel in [
-        "button[aria-label='Continue to next step']",
-        "button[aria-label*='Next']",
-        "button[aria-label*='Review']",
+        "button[data-live-test-easy-apply-review-button]",
+        "button[aria-label='Review your application']",
     ]:
         btn = page.query_selector(sel)
         if btn and btn.is_visible():
@@ -249,19 +352,16 @@ def _click_next_or_submit(page) -> str:
             except Exception:
                 return "error"
 
-    for btn in page.query_selector_all("button"):
-        try:
-            text = (btn.inner_text() or "").lower().strip()
-            if not btn.is_visible():
-                continue
-            if text in ("submit application", "submit"):
-                btn.click()
-                time.sleep(2)
-                return "submitted"
-            if text in ("next", "continue", "review"):
+    for sel in [
+        "button[data-easy-apply-next-button]",
+        "button[aria-label='Continue to next step']",
+    ]:
+        btn = page.query_selector(sel)
+        if btn and btn.is_visible():
+            try:
                 btn.click()
                 return "next"
-        except Exception:
-            pass
+            except Exception:
+                return "error"
 
     return "error"

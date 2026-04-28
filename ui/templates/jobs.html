@@ -90,6 +90,9 @@
       </td>
       <td>
         <a href="/status/{{ job.job_id }}" class="btn btn-ghost btn-sm">View</a>
+        {% if job.status == 'answers_pending_approval' %}
+        <a href="{{ url_for('apply.review_answers', job_id=job.job_id) }}" class="btn btn-primary btn-sm">Review & Submit</a>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}

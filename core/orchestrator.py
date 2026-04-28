@@ -238,15 +238,12 @@ class Orchestrator:
                     jd_text=job_dict["jd_text"] or "",
                 )
 
-                result = skill.apply(listing, answers, resume_path)
+                result = skill.apply(listing, answers, resume_path, mode="extract")
                 self._file_manager.save_proof(job_id, result.screenshots)
 
-                if result.success:
+                if result.success and result.pending_review:
                     self._job_manager.safe_transition(job_id, "answers_pending_approval")
-                    self._job_manager.safe_transition(job_id, "submitting")
-                    self._job_manager.safe_transition(job_id, "done")
-                    self.state.update(applied=self.state.applied + 1)
-                    logger.info("Applied to %s successfully", job_id)
+                    logger.info("Extracted Q&A for %s — awaiting user review", job_id)
                 else:
                     self._repo.log_error(job_id, "apply", result.error_reason or "unknown")
                     self._repo.update_status(job_id, "error")
@@ -261,6 +258,45 @@ class Orchestrator:
         except Exception as e:
             logger.exception("Apply pipeline failed")
             self.state.update(status="error", message="Apply failed.", error=str(e))
+
+    # ── Submit approved answers ────────────────────────────────────────
+
+    def submit_job(self, job_id: str) -> bool:
+        job_dict = self._repo.get_by_id(job_id)
+        if not job_dict:
+            return False
+        self._driver.launch()
+        from sites.linkedin import LinkedInSkill
+        skill = LinkedInSkill()
+        answers = self._config["application"]["default_answers"]
+        resume_path = str(
+            Path(self._config["_base_dir"]) / self._config["application"]["resume_path"]
+        )
+        listing = JobListing(
+            job_id=job_dict["job_id"],
+            url=job_dict["url"],
+            site=job_dict["site"],
+            title=job_dict["title"] or "",
+            company=job_dict["company"] or "",
+            location=job_dict["location"] or "",
+            posted_date=job_dict["posted_date"] or "",
+            jd_text=job_dict["jd_text"] or "",
+        )
+        result = skill.apply(listing, answers, resume_path, mode="submit")
+        self._file_manager.save_proof(job_id, result.screenshots)
+        if result.success:
+            self._job_manager.safe_transition(job_id, "submitting")
+            self._job_manager.safe_transition(job_id, "done")
+            logger.info("Submitted %s", job_id)
+            return True
+        else:
+            self._repo.log_error(job_id, "submit", result.error_reason or "unknown")
+            self._repo.update_status(job_id, "error")
+            logger.warning("Submit failed for %s: %s", job_id, result.error_reason)
+            return False
+
+    def reject_answers(self, job_id: str) -> None:
+        self._repo.update_status(job_id, "approved_exploring_job_form")
 
     # ── Retry errored jobs ─────────────────────────────────────────────
 

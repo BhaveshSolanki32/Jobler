@@ -42,6 +42,7 @@ class ApplicationResult:
     success: bool
     screenshots: list[str] = field(default_factory=list)
     error_reason: Optional[str] = None
+    pending_review: bool = False
 
 
 class Searchable(ABC):
@@ -61,7 +62,7 @@ class Extractable(ABC):
 class Applyable(ABC):
     @abstractmethod
     def apply(
-        self, listing: JobListing, answers: dict, resume_path: str
+        self, listing: JobListing, answers: dict, resume_path: str, mode: str = "extract"
     ) -> ApplicationResult:
         """Fill and submit application. Return result with screenshot paths."""
         ...

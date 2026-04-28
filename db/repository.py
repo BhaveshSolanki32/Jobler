@@ -159,10 +159,7 @@ class JobRepository:
     def get_retry_candidates(self) -> list[dict]:
         conn = self._conn()
         rows = conn.execute(
-            """SELECT j.* FROM jobs j
-               LEFT JOIN (SELECT job_id, MAX(retry_count) as rc FROM errors GROUP BY job_id) e
-               ON j.job_id = e.job_id
-               WHERE j.status = 'error' AND (e.rc IS NULL OR e.rc < 1)"""
+            "SELECT * FROM jobs WHERE status IN ('error', 'filling_out_answers')"
         ).fetchall()
         conn.close()
         return [_deserialize_row(r) for r in rows]

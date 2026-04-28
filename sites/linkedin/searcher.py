@@ -2,6 +2,7 @@ import time
 import logging
 from pathlib import Path
 from urllib.parse import quote, urlencode
+from slugify import slugify
 
 from browser.driver import BrowserDriver
 from sites.base import JobListing, Searchable
@@ -19,15 +20,18 @@ def _is_auth_required(page) -> bool:
 
 
 def _dismiss_auth_popup(page) -> bool:
-    """Click Continue As button. Use this inside extractor/apply where config isn't available."""
+    """Click Continue As button and poll until Google OAuth completes."""
     if not _is_auth_required(page):
         return True
     try:
         page.locator("button:has-text('Continue as')").first.click(timeout=3000)
-        time.sleep(3)
-        return not _is_auth_required(page)
     except Exception:
         return False
+    for _ in range(20):
+        time.sleep(1)
+        if not _is_auth_required(page):
+            return True
+    return False
 
 
 def _recover_session(page, ctx, config: dict) -> bool:
@@ -193,13 +197,12 @@ def _find_cards(page) -> list:
     return []
 
 
-def _parse_card(card) -> dict | None:
-    # Job ID — directly on the <li> as data-occludable-job-id (confirmed from saved HTML)
-    job_id = card.get_attribute("data-occludable-job-id") or ""
-    if not job_id:
-        return None
+def _make_job_id(title: str, company: str, location: str) -> str:
+    return slugify(f"{title}_{company}_{location}", max_length=120, separator="_")
 
-    # Title link — a.job-card-list__title--link (confirmed class from saved HTML)
+
+def _parse_card(card) -> dict | None:
+    # Title link — a.job-card-list__title--link (confirmed from saved HTML)
     title_el = card.query_selector("a.job-card-list__title--link")
     if not title_el:
         return None
@@ -211,7 +214,7 @@ def _parse_card(card) -> dict | None:
     if url.startswith("/"):
         url = "https://www.linkedin.com" + url
 
-    # Title — <strong> inside the link contains clean text (avoids duplicate from aria-hidden spans)
+    # Title — <strong> inside the link (avoids duplicate text from aria-hidden spans)
     strong = title_el.query_selector("strong")
     title = strong.inner_text().strip() if strong else title_el.inner_text().split("\n")[0].strip()
     if not title:
@@ -235,7 +238,7 @@ def _parse_card(card) -> dict | None:
         posted = time_el.get_attribute("datetime") or time_el.inner_text().strip()
 
     return {
-        "job_id": job_id,
+        "job_id": _make_job_id(title, company, location),
         "url": url,
         "title": title,
         "company": company,
