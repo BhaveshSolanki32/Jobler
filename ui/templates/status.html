@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %} — {{ job.title }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;">
+  <a href="{{ url_for('search.jobs_page') }}" class="btn btn-ghost btn-sm">← Back</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">{{ job.title }}</div>
+      <div class="card-sub">{{ job.company }} &nbsp;·&nbsp; {{ job.location }}</div>
+    </div>
+    {% set s = job.status %}
+    {% if s == 'done' %}<span class="badge badge-done">done</span>
+    {% elif s == 'error' %}<span class="badge badge-error">error</span>
+    {% elif s == 'rejected' %}<span class="badge badge-rejected">rejected</span>
+    {% elif s in ['approved_exploring_job_form','filling_out_answers','answers_pending_approval'] %}<span class="badge badge-approved">approved</span>
+    {% elif s == 'submitting' %}<span class="badge badge-applying">submitting</span>
+    {% else %}<span class="badge badge-pending">{{ s }}</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <a href="{{ job.url }}" target="_blank" style="font-size:12px;">Open on LinkedIn ↗</a>
+    &nbsp;·&nbsp; Score: <span class="score">{{ "%.3f"|format(job.keyword_score) }}</span>
+    &nbsp;·&nbsp; Posted: {{ job.posted_date or '—' }}
+  </div>
+</div>
+
+{% if job.summary %}
+<div class="card">
+  <div class="section-title">Summary</div>
+  <div class="card-body">{{ job.summary }}</div>
+</div>
+{% endif %}
+
+{% if proof %}
+<div class="card">
+  <div class="section-title">Proof ({{ proof|length }} screenshots)</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+    {% for p in proof %}
+    <div style="font-size:11px;color:#888;">{{ p.split('/')[-1] }}</div>
+    {% endfor %}
+  </div>
+  <div style="font-size:11px;color:#666;margin-top:8px;">
+    Screenshots saved to <code>jobs/{{ job.job_id }}/proof/</code>
+  </div>
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="card">
+  <div class="section-title">Errors</div>
+  <table>
+    <thead><tr><th>Step</th><th>Reason</th><th>Retries</th><th>Time</th></tr></thead>
+    <tbody>
+      {% for e in errors %}
+      <tr>
+        <td style="color:#ccc;">{{ e.step }}</td>
+        <td style="color:#cf7e7e;">{{ e.reason or '—' }}</td>
+        <td>{{ e.retry_count }}</td>
+        <td style="color:#666;font-size:11px;">{{ e.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if job.jd_text %}
+<div class="card">
+  <div class="section-title">Job Description</div>
+  <div class="card-body" style="white-space:pre-wrap;max-height:400px;overflow-y:auto;font-size:12px;line-height:1.7;">{{ job.jd_text }}</div>
+</div>
+{% endif %}
+
+{% if job.company_info %}
+<div class="card">
+  <div class="section-title">Company Info</div>
+  <div class="card-body" style="white-space:pre-wrap;font-size:12px;line-height:1.7;">{{ job.company_info }}</div>
+</div>
+{% endif %}
+{% endblock %}

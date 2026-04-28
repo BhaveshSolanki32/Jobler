@@ -1,0 +1,102 @@
+{
+  "search": {
+    "terms": [
+      "software engineer",
+      "backend engineer"
+    ],
+    "location": "India",
+    "max_results_per_term": 25,
+    "linkedin": {
+      "easy_apply_only": false,
+      "experience_levels": [2, 3],
+      "sort_by": ""
+    }
+  },
+  "filters": {
+    "rules": [
+      {
+        "type": "range",
+        "field": "yoe_min",
+        "source": "slm",
+        "max": 3,
+        "null_passes": true
+      },
+      {
+        "type": "keyword",
+        "field": "seniority",
+        "source": "slm",
+        "mode": "allowlist",
+        "values": ["junior", "mid", "associate", "entry", "unknown"],
+        "null_passes": true
+      },
+      {
+        "type": "keyword",
+        "field": "is_tech_role",
+        "source": "slm",
+        "mode": "allowlist",
+        "values": ["true"],
+        "null_passes": true
+      },
+      {
+        "type": "keyword",
+        "field": "requires_degree",
+        "source": "slm",
+        "mode": "allowlist",
+        "values": ["any", "bachelor", "unknown"],
+        "null_passes": true
+      },
+      {
+        "type": "keyword",
+        "field": "title",
+        "source": "job",
+        "mode": "not_contains_any",
+        "values": ["senior", "lead", "staff", "manager", "director", "principal", "head of"],
+        "null_passes": true
+      },
+      {
+        "type": "keyword",
+        "field": "location",
+        "source": "job",
+        "mode": "contains_any",
+        "values": ["remote", "india"],
+        "null_passes": true
+      }
+    ]
+  },
+  "keyword_bank": [
+    "python",
+    "docker",
+    "machine learning",
+    "aws"
+  ],
+  "application": {
+    "resume_path": "resume/resume.pdf",
+    "default_answers": {
+      "years_of_experience": "2",
+      "phone": "+91XXXXXXXXXX",
+      "current_ctc": "0",
+      "expected_ctc": "negotiable",
+      "notice_period": "30",
+      "current_location": "Your City",
+      "willing_to_relocate": "Yes",
+      "authorized_to_work": "Yes",
+      "require_sponsorship": "No",
+      "gender": "",
+      "ethnicity": "",
+      "disability": "No",
+      "veteran": "No"
+    }
+  },
+  "display": {
+    "top_n_jobs": 50
+  },
+  "browser": {
+    "headless": false,
+    "session_dir": ".sessions"
+  },
+  "llm": {
+    "provider": "openrouter",
+    "model": "anthropic/claude-3-haiku",
+    "base_url": "https://openrouter.ai/api/v1"
+  }
+}

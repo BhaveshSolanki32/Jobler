@@ -1,0 +1,12 @@
+venv/
+.env
+.sessions/
+jobs/
+logs/
+db/jobs.db
+resume/
+user_config.json
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store

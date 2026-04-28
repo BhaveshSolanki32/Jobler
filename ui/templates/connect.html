@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %} — Connect LinkedIn{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;margin:60px auto;">
+
+  {% if already_ready %}
+  <div class="card" style="text-align:center;padding:40px;">
+    <div style="font-size:36px;margin-bottom:12px;">✓</div>
+    <div style="font-size:18px;font-weight:600;color:#fff;margin-bottom:8px;">LinkedIn already connected</div>
+    <div style="color:#888;margin-bottom:24px;">Your session is saved. You can run a search.</div>
+    <a href="{{ url_for('search.jobs_page') }}" class="btn btn-primary">Go to Jobs →</a>
+  </div>
+
+  {% elif browser_open %}
+  {# Step 2: browser is open, user is logging in #}
+  <div class="card" style="padding:40px;">
+    <div style="font-size:32px;margin-bottom:12px;">🌐</div>
+    <div style="font-size:18px;font-weight:600;color:#fff;margin-bottom:8px;">Browser is open</div>
+    <div style="color:#aaa;margin-bottom:24px;line-height:1.7;">
+      LinkedIn is open in the browser window.<br>
+      <strong style="color:#fff;">Log in there now.</strong><br><br>
+      Once you are fully logged in and can see your LinkedIn feed or jobs page,
+      come back here and click the button below.
+    </div>
+    <form method="POST" action="/save-session">
+      <button class="btn btn-success" type="submit" style="width:100%;padding:14px;font-size:15px;">
+        ✓ I'm logged in — Save &amp; Continue
+      </button>
+    </form>
+  </div>
+
+  {% else %}
+  {# Step 1: not connected yet #}
+  <div class="card" style="padding:40px;">
+    <div style="font-size:32px;margin-bottom:12px;">🔗</div>
+    <div style="font-size:18px;font-weight:600;color:#fff;margin-bottom:8px;">Connect LinkedIn</div>
+    <div style="color:#aaa;margin-bottom:24px;line-height:1.7;">
+      Jobler will open a browser window pointing to LinkedIn's login page.<br>
+      Log in there, then come back here to continue.
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div style="padding:10px;border-radius:6px;margin-bottom:16px;background:#3a1a1a;border:1px solid #6a2a2a;color:#cf7e7e;font-size:13px;">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+    <form method="POST" action="/connect-linkedin">
+      <button class="btn btn-primary" type="submit" style="width:100%;padding:14px;font-size:15px;">
+        Open LinkedIn in Browser →
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %} — Config{% endblock %}
+
+{% block content %}
+<div class="section-title">Configuration</div>
+<form method="POST" action="/config">
+  <div class="grid-2">
+    <div>
+      <div class="section-title" style="font-size:14px;margin-top:8px;">Search</div>
+
+      <div class="form-group">
+        <label>Search terms (one per line)</label>
+        <textarea name="search_terms" rows="5">{{ cfg.search.terms | join('\n') }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" name="location" value="{{ cfg.search.location }}">
+      </div>
+
+      <div class="form-group">
+        <label>Max results per term</label>
+        <input type="number" name="max_results" value="{{ cfg.search.max_results_per_term }}" min="5" max="100">
+      </div>
+
+      <div class="section-title" style="font-size:14px;margin-top:20px;">LinkedIn Search Options</div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="li_easy_apply" value="1" {% if cfg.search.linkedin.easy_apply_only %}checked{% endif %}>
+          Easy Apply only
+        </label>
+        <div class="hint">Restrict LinkedIn results to jobs with Easy Apply.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Experience levels (LinkedIn filter)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
+          {% set li_levels = cfg.search.linkedin.experience_levels %}
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+            <input type="checkbox" name="li_levels" value="1" {% if 1 in li_levels %}checked{% endif %}> Internship
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+            <input type="checkbox" name="li_levels" value="2" {% if 2 in li_levels %}checked{% endif %}> Entry level
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+            <input type="checkbox" name="li_levels" value="3" {% if 3 in li_levels %}checked{% endif %}> Associate
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+            <input type="checkbox" name="li_levels" value="4" {% if 4 in li_levels %}checked{% endif %}> Mid-Senior
+          </label>
+        </div>
+        <div class="hint">Leave all unchecked to fetch all levels (filter engine handles seniority).</div>
+      </div>
+
+      <div class="form-group">
+        <label>Sort by</label>
+        <select name="li_sort_by">
+          <option value="" {% if not cfg.search.linkedin.sort_by %}selected{% endif %}>LinkedIn default</option>
+          <option value="DD" {% if cfg.search.linkedin.sort_by == 'DD' %}selected{% endif %}>Most recent</option>
+          <option value="R" {% if cfg.search.linkedin.sort_by == 'R' %}selected{% endif %}>Most relevant</option>
+        </select>
+      </div>
+
+      <div class="section-title" style="font-size:14px;margin-top:20px;">Filters</div>
+
+      <div class="form-group">
+        <label>Max YOE required by job</label>
+        <input type="number" name="yoe_max" value="{{ filters_ui.yoe_max }}" min="0" max="20" step="0.5">
+        <div class="hint">Jobs asking for more experience than this are filtered out. Decimals allowed (e.g. 1.5).</div>
+      </div>
+
+      <div class="form-group">
+        <label>Location keywords (one per line)</label>
+        <textarea name="location_keywords">{{ filters_ui.location_keywords | join('\n') }}</textarea>
+        <div class="hint">Job location must contain at least one of these. Empty location always passes.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Exclude title keywords (one per line)</label>
+        <textarea name="exclude_keywords">{{ filters_ui.exclude_keywords | join('\n') }}</textarea>
+        <div class="hint">Jobs with these words in the title are filtered out.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title" style="font-size:14px;margin-top:8px;">Ranking</div>
+
+      <div class="form-group">
+        <label>Keyword bank (one per line)</label>
+        <textarea name="keyword_bank" rows="10">{{ cfg.keyword_bank | join('\n') }}</textarea>
+        <div class="hint">Jobs are scored by how many of these keywords appear in the JD.</div>
+      </div>
+
+      <div class="section-title" style="font-size:14px;margin-top:20px;">Application</div>
+
+      <div class="form-group">
+        <label>Resume path (relative to Jobler folder)</label>
+        <input type="text" name="resume_path" value="{{ cfg.application.resume_path }}">
+      </div>
+
+      <div class="form-group">
+        <label>Phone number</label>
+        <input type="text" name="phone" value="{{ cfg.application.default_answers.phone }}">
+      </div>
+
+      <div class="form-group">
+        <label>Years of experience (your answer)</label>
+        <input type="text" name="yoe_answer" value="{{ cfg.application.default_answers.years_of_experience }}">
+      </div>
+
+      <div class="form-group">
+        <label>Notice period</label>
+        <input type="text" name="notice_period" value="{{ cfg.application.default_answers.notice_period }}">
+      </div>
+
+      <div class="form-group">
+        <label>Current location (your answer)</label>
+        <input type="text" name="current_location" value="{{ cfg.application.default_answers.current_location }}">
+      </div>
+
+      <div class="form-group">
+        <label>Top N jobs to display</label>
+        <input type="number" name="top_n_jobs" value="{{ cfg.display.top_n_jobs }}" min="5" max="200">
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #2a2a2a;">
+    <button class="btn btn-primary" type="submit">Save Config</button>
+    <a href="{{ url_for('search.jobs_page') }}" class="btn btn-ghost" style="margin-left:8px;">Cancel</a>
+  </div>
+</form>
+{% endblock %}

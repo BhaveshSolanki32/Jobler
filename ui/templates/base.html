@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jobler{% block title %}{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; font-size: 14px; }
+    a { color: #7eb8f7; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { background: #1a1a1a; border-bottom: 1px solid #2a2a2a; padding: 0 24px; display: flex; align-items: center; height: 48px; gap: 24px; }
+    nav .brand { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    nav a { color: #999; font-size: 13px; }
+    nav a:hover { color: #fff; text-decoration: none; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    .flash-list { list-style: none; margin-bottom: 16px; }
+    .flash-list li { padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+    .flash-list .success { background: #1a3a1a; border: 1px solid #2a6a2a; color: #7ecf7e; }
+    .flash-list .error   { background: #3a1a1a; border: 1px solid #6a2a2a; color: #cf7e7e; }
+    .flash-list .info    { background: #1a2a3a; border: 1px solid #2a4a6a; color: #7eaecf; }
+
+    .btn { display: inline-block; padding: 7px 16px; border-radius: 5px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-success { background: #16a34a; color: #fff; }
+    .btn-danger  { background: #dc2626; color: #fff; }
+    .btn-warning { background: #d97706; color: #fff; }
+    .btn-ghost   { background: #2a2a2a; color: #ccc; border: 1px solid #3a3a3a; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+    .badge-pending  { background: #2a2a3a; color: #888; }
+    .badge-approved { background: #1a3a1a; color: #7ecf7e; }
+    .badge-rejected { background: #3a1a1a; color: #cf7e7e; }
+    .badge-done     { background: #1a3a3a; color: #7ecfcf; }
+    .badge-error    { background: #3a2a1a; color: #cfae7e; }
+    .badge-applying { background: #2a1a3a; color: #ae7ecf; }
+
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .card-title { font-size: 15px; font-weight: 600; color: #fff; }
+    .card-sub { font-size: 12px; color: #888; margin-top: 2px; }
+    .card-body { font-size: 13px; color: #bbb; line-height: 1.6; }
+
+    .status-bar { background: #1a1a2a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #888; flex-shrink: 0; }
+    .status-bar .dot.searching { background: #f59e0b; animation: pulse 1s infinite; }
+    .status-bar .dot.done      { background: #22c55e; }
+    .status-bar .dot.error     { background: #ef4444; }
+    .status-bar .dot.applying  { background: #a855f7; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .status-bar .msg { flex: 1; font-size: 13px; color: #ccc; }
+    .progress-bar { height: 4px; background: #2a2a2a; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #2563eb; transition: width 0.4s; border-radius: 2px; }
+
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+    .toolbar form { display: inline; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; background: #1e1e1e; color: #888; font-weight: 500; border-bottom: 1px solid #2a2a2a; }
+    td { padding: 10px 12px; border-bottom: 1px solid #1e1e1e; vertical-align: top; }
+    tr:hover td { background: #1e1e1e; }
+    .score { font-size: 11px; font-family: monospace; color: #7eb8f7; }
+
+    .form-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 4px; font-size: 13px; color: #aaa; }
+    input[type=text], input[type=number], textarea, select {
+      width: 100%; background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 5px;
+      color: #e0e0e0; padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #2563eb; }
+    textarea { resize: vertical; min-height: 80px; }
+    .hint { font-size: 11px; color: #666; margin-top: 3px; }
+
+    .section-title { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+    .select-all-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; color: #888; }
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">Jobler</span>
+  <a href="{{ url_for('search.jobs_page') }}">Jobs</a>
+  <a href="{{ url_for('config.config_page') }}">Config</a>
+</nav>
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul class="flash-list">
+        {% for cat, msg in messages %}
+          <li class="{{ cat }}">{{ msg }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+<script>
+function selectAll(checked) {
+  document.querySelectorAll('.job-checkbox').forEach(cb => cb.checked = checked);
+}
+function getChecked() {
+  return Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+}
+function bulkAction(action) {
+  const ids = getChecked();
+  if (!ids.length) { alert('Select at least one job.'); return; }
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  ids.forEach(id => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'job_ids'; inp.value = id;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// Poll pipeline state every 3s when running
+let pollInterval = null;
+function startPoll() {
+  if (pollInterval) return;
+  pollInterval = setInterval(async () => {
+    const res = await fetch('/api/pipeline-state');
+    const s = await res.json();
+    const bar = document.getElementById('status-msg');
+    const dot = document.getElementById('status-dot');
+    const fill = document.getElementById('progress-fill');
+    if (bar) bar.textContent = s.message;
+    if (dot) { dot.className = 'dot ' + s.status; }
+    if (fill) fill.style.width = s.progress + '%';
+    if (s.status === 'done' || s.status === 'error' || s.status === 'idle') {
+      clearInterval(pollInterval); pollInterval = null;
+      if (s.status === 'done') location.reload();
+    }
+  }, 3000);
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

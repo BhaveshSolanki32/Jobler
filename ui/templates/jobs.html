@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %} — Jobs{% endblock %}
+
+{% block content %}
+<div class="status-bar">
+  <div class="dot {{ state.status }}" id="status-dot"></div>
+  <div class="msg" id="status-msg">{{ state.message or 'Ready.' }}</div>
+  <span style="font-size:12px;color:#666;">
+    Found: {{ state.found }} &nbsp;|&nbsp; Passed: {{ state.passed_filter }} &nbsp;|&nbsp; Applied: {{ state.applied }}
+  </span>
+</div>
+<div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:{{ state.progress }}%"></div></div>
+
+<div class="toolbar" style="margin-top:16px;">
+  <form method="POST" action="/search">
+    <button class="btn btn-primary" type="submit">Run Search</button>
+  </form>
+
+  <button class="btn btn-success" onclick="bulkAction('/approve')">Approve Selected</button>
+  <button class="btn btn-danger"  onclick="bulkAction('/reject')">Reject Selected</button>
+
+  <form method="POST" action="/apply" style="margin-left:auto;">
+    <button class="btn btn-success" type="submit">Apply to Approved</button>
+  </form>
+  <form method="POST" action="/retry-errors">
+    <button class="btn btn-ghost btn-sm" type="submit">Retry Errors</button>
+  </form>
+  <a href="{{ url_for('config.config_page') }}" class="btn btn-ghost btn-sm">Config</a>
+</div>
+
+{% if jobs %}
+<div class="select-all-bar">
+  <input type="checkbox" onchange="selectAll(this.checked)" id="select-all">
+  <label for="select-all">Select all</label>
+  <span style="margin-left:auto;">{{ jobs|length }} jobs</span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:28px;"></th>
+      <th>Role</th>
+      <th>Company</th>
+      <th>Location</th>
+      <th>Score</th>
+      <th>Status</th>
+      <th style="width:60px;"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td><input type="checkbox" class="job-checkbox" value="{{ job.job_id }}"></td>
+      <td>
+        <div style="font-weight:500;"><a href="{{ job.url }}" target="_blank" style="color:#fff;text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">{{ job.title }}</a></div>
+        {% if job.slm_response %}
+          <div style="font-size:11px;color:#666;margin-top:2px;">
+            {% set slm = job.slm_response %}
+            YOE: {% if slm.yoe_min is not none and slm.yoe_max is not none %}{{ slm.yoe_min }}-{{ slm.yoe_max }}{% elif slm.yoe_min is not none %}{{ slm.yoe_min }}+{% elif slm.yoe_max is not none %}0-{{ slm.yoe_max }}{% else %}?{% endif %}
+            &nbsp;·&nbsp; {{ slm.seniority or '?' }}
+            &nbsp;·&nbsp; {{ slm.job_type or '?' }}
+          </div>
+        {% endif %}
+        {% if job.summary %}
+          <div style="font-size:11px;color:#888;margin-top:3px;max-width:420px;line-height:1.5;">{{ job.summary }}</div>
+        {% endif %}
+      </td>
+      <td style="color:#ccc;">{{ job.company }}</td>
+      <td style="color:#999;">{{ job.location }}</td>
+      <td class="score">{{ "%.2f"|format(job.keyword_score) }}</td>
+      <td>
+        {% set s = job.status %}
+        {% if s == 'pending_initial_approval' %}
+          <span class="badge badge-pending">pending</span>
+        {% elif s == 'approved_exploring_job_form' or s == 'filling_out_answers' or s == 'answers_pending_approval' %}
+          <span class="badge badge-approved">approved</span>
+        {% elif s == 'submitting' %}
+          <span class="badge badge-applying">submitting</span>
+        {% elif s == 'done' %}
+          <span class="badge badge-done">done</span>
+        {% elif s == 'rejected' %}
+          <span class="badge badge-rejected">rejected</span>
+        {% elif s == 'error' %}
+          <span class="badge badge-error">error</span>
+        {% elif s == 'filter_rejected' %}
+          <span class="badge badge-rejected" title="{{ job.rejection_reason }}">auto-filtered</span>
+        {% else %}
+          <span class="badge badge-pending">{{ s }}</span>
+        {% endif %}
+      </td>
+      <td>
+        <a href="/status/{{ job.job_id }}" class="btn btn-ghost btn-sm">View</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:32px;margin-bottom:12px;">📋</div>
+  <div style="color:#888;">No jobs yet. Connect LinkedIn and run a search.</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const s = {{ state|tojson }};
+if (s.status === 'searching' || s.status === 'applying') startPoll();
+</script>
+{% endblock %}
