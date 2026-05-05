@@ -114,11 +114,11 @@ class LinkedInEasyApplier(Applyable):
 
                 all_qa: list[dict] = []
                 page_num = 2
+                prev_page_text = ""
 
-                while page_num <= 12:
-                    # In submit mode load saved answers, in extract mode use default answers
+                while page_num <= 15:
                     fill_answers = _load_saved_answers(app_dir) if mode == "submit" else answers
-                    qa = _fill_page(page, fill_answers, resume_path)
+                    qa = _fill_page(page, fill_answers, resume_path, overwrite=(mode == "submit"))
                     all_qa.extend(qa)
 
                     ss = drv.screenshot(page, str(proof_dir / f"{page_num:02d}_form_page.png"))
@@ -155,6 +155,22 @@ class LinkedInEasyApplier(Applyable):
                         )
                     except Exception:
                         pass
+
+                    # Detect stuck form: if page text hasn't changed after Next, a validation
+                    # error is blocking progress — save what we have and bail
+                    current_text = ""
+                    try:
+                        modal_el = page.query_selector("div[data-test-modal-id='easy-apply-modal']")
+                        current_text = (modal_el.inner_text() if modal_el else "").strip()
+                    except Exception:
+                        pass
+                    if current_text and current_text == prev_page_text:
+                        # Form didn't advance — likely a required field we couldn't fill
+                        if mode == "extract":
+                            _save_qa(app_dir, all_qa)
+                            return {"success": True, "screenshots": screenshots, "error": None, "pending_review": True}
+                        return {"success": False, "screenshots": screenshots, "error": "form_stuck_validation_error", "pending_review": False}
+                    prev_page_text = current_text
                     page_num += 1
 
                 return {"success": False, "screenshots": screenshots, "error": "form_exceeded_max_pages", "pending_review": False}
@@ -247,8 +263,30 @@ def _get_label(page, element) -> str:
         return ""
 
 
-def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
-    """Fill all fields on the current modal page. Returns list of {question, answer} dicts."""
+def _get_radio_group_question(radio_el) -> str:
+    """Get the question text for a radio group from the nearest fieldset legend or heading."""
+    try:
+        return radio_el.evaluate("""el => {
+            const fs = el.closest('fieldset');
+            if (fs) {
+                const legend = fs.querySelector('legend');
+                if (legend && legend.innerText.trim()) return legend.innerText.trim();
+            }
+            const form_el = el.closest('.fb-dash-form-element, .jobs-easy-apply-form-element');
+            if (form_el) {
+                const h = form_el.querySelector('h3, h4, label, span.t-bold');
+                if (h && h.innerText.trim()) return h.innerText.trim();
+            }
+            return el.getAttribute('name') || '';
+        }""")
+    except Exception:
+        return ""
+
+
+def _fill_page(page, answers: dict, resume_path: str, overwrite: bool = False) -> list[dict]:
+    """Fill all fields on the current modal page. Returns list of {question, answer} dicts.
+    overwrite=True (submit mode): always fill fields even if pre-filled, using saved answers.
+    """
     qa: list[dict] = []
     modal = (
         page.query_selector("div[data-test-modal-id='easy-apply-modal']")
@@ -256,17 +294,18 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
         or page
     )
 
-    # Resume upload
-    resume_abs = str(Path(resume_path).resolve())
-    if Path(resume_abs).exists():
-        for fi in page.query_selector_all("input[type='file']"):
-            try:
-                fi.set_input_files(resume_abs)
-                time.sleep(1)
-                qa.append({"question": "Resume", "answer": Path(resume_path).name})
-                break
-            except Exception:
-                pass
+    # Resume upload — only in extract mode; in submit mode resume is already attached
+    if not overwrite:
+        resume_abs = str(Path(resume_path).resolve())
+        if Path(resume_abs).exists():
+            for fi in page.query_selector_all("input[type='file']"):
+                try:
+                    fi.set_input_files(resume_abs)
+                    time.sleep(1)
+                    qa.append({"question": "Resume", "answer": Path(resume_path).name})
+                    break
+                except Exception:
+                    pass
 
     # Text / tel / number inputs
     for inp in modal.query_selector_all("input[type='text'], input[type='tel'], input[type='number']"):
@@ -274,19 +313,27 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
             if not inp.is_visible() or inp.is_disabled():
                 continue
             label = _get_label(page, inp)
+            if not label or _is_ui_noise(label, ""):
+                continue
             existing = (inp.input_value() or "").strip()
-            if existing:
+            # Sanitise: take only first non-empty line (some LinkedIn fields return multiline)
+            existing = existing.splitlines()[0].strip() if existing else ""
+
+            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
+
+            if overwrite and ans:
+                # Submit mode: always write saved answer
+                inp.triple_click()
+                inp.fill(str(ans))
+                qa.append({"question": label, "answer": str(ans)})
+            elif existing:
                 if not _is_ui_noise(label, existing):
                     qa.append({"question": label, "answer": existing})
-                continue
-            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
-            if ans:
+            elif ans:
                 inp.fill(str(ans))
                 qa.append({"question": label, "answer": str(ans)})
             else:
-                # Blank field — add as unanswered so user can fill it in review
-                if label and not _is_ui_noise(label, ""):
-                    qa.append({"question": label, "answer": ""})
+                qa.append({"question": label, "answer": ""})
         except Exception as e:
             logger.debug("Input fill error: %s", e)
 
@@ -296,18 +343,23 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
             if not ta.is_visible() or ta.is_disabled():
                 continue
             label = _get_label(page, ta)
+            if not label or _is_ui_noise(label, ""):
+                continue
             existing = (ta.input_value() or "").strip()
-            if existing:
+            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
+
+            if overwrite and ans:
+                ta.triple_click()
+                ta.fill(str(ans))
+                qa.append({"question": label, "answer": str(ans)})
+            elif existing:
                 if not _is_ui_noise(label, existing):
                     qa.append({"question": label, "answer": existing})
-                continue
-            ans = _answer_for_label(label, answers) or answers.get(label.lower(), "")
-            if ans:
+            elif ans:
                 ta.fill(str(ans))
                 qa.append({"question": label, "answer": str(ans)})
             else:
-                if label and not _is_ui_noise(label, ""):
-                    qa.append({"question": label, "answer": ""})
+                qa.append({"question": label, "answer": ""})
         except Exception as e:
             logger.debug("Textarea fill error: %s", e)
 
@@ -318,11 +370,8 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
                 continue
             label = _get_label(page, sel_el)
             opts = sel_el.query_selector_all("option")
-            # Check if already has a non-empty selection
-            current_val = sel_el.input_value() if hasattr(sel_el, 'input_value') else ""
             saved_ans = answers.get(label.lower(), "")
             if saved_ans:
-                # Try to match saved answer to an option
                 for opt in opts:
                     opt_text = (opt.inner_text() or "").strip().lower()
                     if saved_ans.lower() in opt_text or opt_text in saved_ans.lower():
@@ -349,22 +398,38 @@ def _fill_page(page, answers: dict, resume_path: str) -> list[dict]:
             radio_groups.setdefault(name, []).append(radio)
         except Exception:
             pass
+
     for name, group in radio_groups.items():
-        if any(r.is_checked() for r in group):
-            checked = next((r for r in group if r.is_checked()), group[0])
-            qa.append({"question": _get_label(page, group[0]), "answer": _get_label(page, checked)})
-            continue
-        yes_radio = next(
-            (r for r in group if _get_label(page, r).lower() in ("yes", "true")),
-            None,
-        )
-        target = yes_radio or (group[0] if group else None)
-        if target:
-            try:
+        try:
+            question_text = _get_radio_group_question(group[0]) or name
+            saved_ans = answers.get(question_text.lower(), "")
+
+            if saved_ans:
+                # Find radio option matching saved answer
+                matched = None
+                for r in group:
+                    opt_label = _get_label(page, r).lower().strip()
+                    if saved_ans.lower().strip() in opt_label or opt_label in saved_ans.lower().strip():
+                        matched = r
+                        break
+                target = matched or next((r for r in group if r.is_checked()), None)
+                if target and not target.is_checked():
+                    target.check()
+                if target:
+                    qa.append({"question": question_text, "answer": _get_label(page, target)})
+            elif any(r.is_checked() for r in group):
+                checked = next(r for r in group if r.is_checked())
+                qa.append({"question": question_text, "answer": _get_label(page, checked)})
+            else:
+                # No saved answer, nothing checked — default to Yes or first option
+                yes_radio = next(
+                    (r for r in group if _get_label(page, r).lower() in ("yes", "true")), None
+                )
+                target = yes_radio or group[0]
                 target.check()
-                qa.append({"question": name, "answer": _get_label(page, target)})
-            except Exception:
-                pass
+                qa.append({"question": question_text, "answer": _get_label(page, target)})
+        except Exception as e:
+            logger.debug("Radio fill error: %s", e)
 
     return qa
 

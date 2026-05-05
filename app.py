@@ -47,5 +47,8 @@ def create_app() -> Flask:
 
 if __name__ == "__main__":
     app = create_app()
-    logger.info("Starting Jobler on http://127.0.0.1:5000")
-    app.run(debug=False, host="127.0.0.1", port=5000, threaded=True)
+    port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", '127.0.0.1')
+
+    logger.info(f"Starting Jobler on {host}:{port}")
+    app.run(debug=False, host=host, port=port, threaded=True)
