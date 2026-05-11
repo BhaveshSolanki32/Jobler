@@ -213,7 +213,6 @@ class Orchestrator:
                 self.state.update(status="done", message="No approved jobs to apply to.", progress=100)
                 return
 
-            answers = self._config["application"]["default_answers"]
             session_dir = Path(self._config["_base_dir"]) / self._config.get("browser", {}).get("session_dir", ".sessions")
 
             for i, job_dict in enumerate(approved):
@@ -230,8 +229,8 @@ class Orchestrator:
                 if session_file:
                     cfg['_session_file'] = str(session_file)
 
-                skill = agent.resolve_skill(url)
-                task = agent.extract_task(url, answers)
+                skill = agent.resolve_skill(url, 'EXTRACT')
+                task = agent.extract_task(url)
                 result = agent.run(task, skill, cfg)
 
                 if result.success:
@@ -283,7 +282,7 @@ class Orchestrator:
         if session_file:
             cfg['_session_file'] = str(session_file)
 
-        skill = agent.resolve_skill(url)
+        skill = agent.resolve_skill(url, 'SUBMIT')
         task = agent.submit_task(url, qa_file.read_text(encoding='utf-8'))
         result = agent.run(task, skill, cfg)
 

@@ -98,6 +98,7 @@ Find the button with `aria-label` containing "Easy Apply" and click it.
 Do NOT wait. Read the next browser_state directly.
 
 ### Step 4 — On each modal page, do ALL of this in ONE step:
+**CRITICAL: save_item + fill fields + click Next must all happen in the same step. Do not split across steps.**
 1. Call save_item for each visible field label or question
 2. Fill every field
 3. Click the navigation button to proceed
@@ -130,6 +131,8 @@ Do NOT wait. Read the next browser_state directly.
 ## SUBMIT mode
 Goal: fill every page and submit.
 
+**CRITICAL: Fill ALL fields on a page AND click Next in the same step. Do not split across steps.**
+
 Same navigation as EXTRACT, but on the review page:
 - IMPORTANT: Shadow DOM field values do NOT appear in browser_state text on the review page — this is normal, they ARE filled
 - Do NOT go back to re-fill fields just because they look empty on review
@@ -145,6 +148,9 @@ Same navigation as EXTRACT, but on the review page:
 ---
 
 ## Recovery rules
+
+**If Easy Apply button not found or not clickable after 2 attempts:**
+- Call done with success=false and reason="no Easy Apply button"
 
 **If Next/Review does not advance the form:**
 - Do NOT click it again

@@ -48,8 +48,6 @@ class BrowserDriver:
         self._bt.submit(self._do_launch)
 
     def _do_launch(self) -> None:
-        import json
-        from browserforge.fingerprints import Fingerprint
         from camoufox.fingerprints import generate_fingerprint
         from camoufox.sync_api import Camoufox
 
@@ -57,13 +55,7 @@ class BrowserDriver:
         session_dir = Path(self._config.get("browser", {}).get("session_dir", ".sessions"))
         session_dir.mkdir(exist_ok=True)
 
-        fp_path = session_dir / "fingerprint.json"
-        if fp_path.exists():
-            fp = Fingerprint(**json.loads(fp_path.read_text()))
-        else:
-            fp = generate_fingerprint()
-            fp_path.write_text(fp.dumps())
-
+        fp = generate_fingerprint()
         self._cm = Camoufox(headless=headless, fingerprint=fp)
         self._browser = self._cm.__enter__()
 

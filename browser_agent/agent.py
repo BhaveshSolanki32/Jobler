@@ -32,10 +32,11 @@ class AgentResult:
     error: Optional[str] = None
 
 
-def resolve_skill(url: str) -> Optional[Path]:
+def resolve_skill(url: str, mode: str = 'EXTRACT') -> Optional[Path]:
     for domain, (folder, _) in _SITE_MAP.items():
         if domain in url:
-            return _SKILLS_BASE / folder / 'base.md'
+            skill = _SKILLS_BASE / folder / f'{mode.lower()}.md'
+            return skill if skill.exists() else _SKILLS_BASE / folder / 'base.md'
     return None
 
 
@@ -47,17 +48,14 @@ def resolve_session(url: str, session_dir: Path) -> Optional[Path]:
     return None
 
 
-def extract_task(url: str, answers: dict) -> str:
-    answers_str = '\n'.join(f'- {k}: {v}' for k, v in answers.items())
+def extract_task(url: str) -> str:
     return f"""
 Go to {url}
 Mode: EXTRACT
 Follow the skill instructions exactly.
 Navigate every page of the application form and call save_item for every form field label you see.
 Do NOT submit. Stop when you reach the review page and call done with success=true.
-
-Answers available (use these to fill required fields so you can proceed past each page):
-{answers_str}
+Fill required fields as needed to proceed past each page.
 """
 
 
@@ -91,12 +89,18 @@ async def _run_async(task: str, skill: Optional[Path], cfg: dict) -> AgentResult
     llm_cfg = cfg.get('llm', {})
     collected: list[str] = []
 
-    llm = ChatOpenAILike(
+    llm_kwargs = dict(
         model=llm_cfg.get('model', 'anthropic/claude-3-5-haiku'),
         api_key=cfg['_env']['openrouter_api_key'],
         base_url=llm_cfg.get('base_url', 'https://openrouter.ai/api/v1'),
         add_schema_to_system_prompt=True,
     )
+    if llm_cfg.get('reasoning_effort'):
+        llm_kwargs['reasoning_effort'] = llm_cfg['reasoning_effort']
+    if llm_cfg.get('reasoning_models'):
+        llm_kwargs['reasoning_models'] = llm_cfg['reasoning_models']
+
+    llm = ChatOpenAILike(**llm_kwargs)
 
     profile_args: dict = {
         'executable_path': str(_CHROMIUM),
@@ -134,6 +138,8 @@ async def _run_async(task: str, skill: Optional[Path], cfg: dict) -> AgentResult
         controller=controller,
         use_vision=False,
         override_system_message=system_prompt,
+        llm_timeout=180,
+        max_actions_per_step=10
     )
 
     result = await agent.run(max_steps=30)
