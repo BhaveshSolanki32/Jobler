@@ -1,16 +1,15 @@
 from typing import Optional, Type
-from sites.base import BaseSiteSkill
 
 
 class SiteSkillRegistry:
-    _registry: dict[str, Type[BaseSiteSkill]] = {}
+    _registry: dict[str, Type] = {}
 
     @classmethod
-    def register(cls, domain: str, skill_class: Type[BaseSiteSkill]) -> None:
+    def register(cls, domain: str, skill_class: Type) -> None:
         cls._registry[domain] = skill_class
 
     @classmethod
-    def get(cls, url: str) -> Optional[Type[BaseSiteSkill]]:
+    def get(cls, url: str) -> Optional[Type]:
         for domain, skill in cls._registry.items():
             if domain in url:
                 return skill

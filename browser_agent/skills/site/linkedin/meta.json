@@ -1,0 +1,9 @@
+{
+  "modal_selector": "[role=dialog]",
+  "modal_markers": ["role=dialog", "aria-modal"],
+  "page_signatures": {
+    "resume":  ["Upload resume", "resume already selected", "Choose"],
+    "contact": ["Email address", "Phone country code", "Mobile phone number"],
+    "review":  ["Review your application", "Submit application"]
+  }
+}

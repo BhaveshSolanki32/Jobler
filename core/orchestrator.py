@@ -203,10 +203,9 @@ class Orchestrator:
     def _run_apply(self) -> None:
         self.state.update(status="applying", message="Starting applications...", progress=0, error=None)
         try:
-            self._driver.launch()  # no-op if already running
+            self._driver.launch()
 
-            from sites.linkedin import LinkedInSkill
-            skill = LinkedInSkill()
+            import browser_agent.agent as agent
 
             approved = self._repo.get_by_status("approved_exploring_job_form")
             total = len(approved)
@@ -215,43 +214,45 @@ class Orchestrator:
                 return
 
             answers = self._config["application"]["default_answers"]
-            resume_path = str(
-                Path(self._config["_base_dir"]) / self._config["application"]["resume_path"]
-            )
+            session_dir = Path(self._config["_base_dir"]) / self._config.get("browser", {}).get("session_dir", ".sessions")
 
             for i, job_dict in enumerate(approved):
                 job_id = job_dict["job_id"]
+                url = job_dict["url"]
                 self.state.update(
-                    message=f"Applying to {i+1}/{total}: {job_dict['title']} at {job_dict['company']}",
+                    message=f"Extracting form {i+1}/{total}: {job_dict['title']} at {job_dict['company']}",
                     progress=int(100 * i / total),
                 )
                 self._job_manager.safe_transition(job_id, "filling_out_answers")
 
-                listing = JobListing(
-                    job_id=job_dict["job_id"],
-                    url=job_dict["url"],
-                    site=job_dict["site"],
-                    title=job_dict["title"] or "",
-                    company=job_dict["company"] or "",
-                    location=job_dict["location"] or "",
-                    posted_date=job_dict["posted_date"] or "",
-                    jd_text=job_dict["jd_text"] or "",
-                )
+                cfg = {**self._config}
+                session_file = agent.resolve_session(url, session_dir)
+                if session_file:
+                    cfg['_session_file'] = str(session_file)
 
-                result = skill.apply(listing, answers, resume_path, mode="extract")
-                self._file_manager.save_proof(job_id, result.screenshots)
+                skill = agent.resolve_skill(url)
+                task = agent.extract_task(url, answers)
+                result = agent.run(task, skill, cfg)
 
-                if result.success and result.pending_review:
+                if result.success:
+                    app_dir = Path(self._config["_base_dir"]) / "jobs" / job_id / "application"
+                    app_dir.mkdir(parents=True, exist_ok=True)
+                    if result.collected:
+                        lines = ['# Application Questions\n']
+                        for q in dict.fromkeys(result.collected):
+                            lines.append(f'## {q}\n\n')
+                        (app_dir / 'questions.md').write_text('\n'.join(lines), encoding='utf-8')
+                        logger.info("Saved %d questions for %s", len(result.collected), job_id)
                     self._job_manager.safe_transition(job_id, "answers_pending_approval")
-                    logger.info("Extracted Q&A for %s — awaiting user review", job_id)
+                    logger.info("Extracted form for %s — awaiting user review", job_id)
                 else:
-                    self._repo.log_error(job_id, "apply", result.error_reason or "unknown")
+                    self._repo.log_error(job_id, "extract", result.error or "unknown")
                     self._repo.update_status(job_id, "error")
-                    logger.warning("Apply failed for %s: %s", job_id, result.error_reason)
+                    logger.warning("Extract failed for %s: %s", job_id, result.error)
 
             self.state.update(
                 status="done",
-                message=f"Applications done. {self.state.applied}/{total} submitted.",
+                message=f"Form extraction done. {total} job(s) processed.",
                 progress=100,
             )
 
@@ -266,33 +267,35 @@ class Orchestrator:
         if not job_dict:
             return False
         self._driver.launch()
-        from sites.linkedin import LinkedInSkill
-        skill = LinkedInSkill()
-        answers = self._config["application"]["default_answers"]
-        resume_path = str(
-            Path(self._config["_base_dir"]) / self._config["application"]["resume_path"]
-        )
-        listing = JobListing(
-            job_id=job_dict["job_id"],
-            url=job_dict["url"],
-            site=job_dict["site"],
-            title=job_dict["title"] or "",
-            company=job_dict["company"] or "",
-            location=job_dict["location"] or "",
-            posted_date=job_dict["posted_date"] or "",
-            jd_text=job_dict["jd_text"] or "",
-        )
-        result = skill.apply(listing, answers, resume_path, mode="submit")
-        self._file_manager.save_proof(job_id, result.screenshots)
+
+        import browser_agent.agent as agent
+
+        url = job_dict["url"]
+        session_dir = Path(self._config["_base_dir"]) / self._config.get("browser", {}).get("session_dir", ".sessions")
+        qa_file = Path(self._config["_base_dir"]) / "jobs" / job_id / "application" / "questions_answered.md"
+
+        if not qa_file.exists() or not qa_file.read_text(encoding='utf-8').strip():
+            self._repo.log_error(job_id, "submit", "questions_answered.md missing")
+            return False
+
+        cfg = {**self._config}
+        session_file = agent.resolve_session(url, session_dir)
+        if session_file:
+            cfg['_session_file'] = str(session_file)
+
+        skill = agent.resolve_skill(url)
+        task = agent.submit_task(url, qa_file.read_text(encoding='utf-8'))
+        result = agent.run(task, skill, cfg)
+
         if result.success:
             self._job_manager.safe_transition(job_id, "submitting")
             self._job_manager.safe_transition(job_id, "done")
             logger.info("Submitted %s", job_id)
             return True
         else:
-            self._repo.log_error(job_id, "submit", result.error_reason or "unknown")
+            self._repo.log_error(job_id, "submit", result.error or "unknown")
             self._repo.update_status(job_id, "error")
-            logger.warning("Submit failed for %s: %s", job_id, result.error_reason)
+            logger.warning("Submit failed for %s: %s", job_id, result.error)
             return False
 
     def reject_answers(self, job_id: str) -> None:

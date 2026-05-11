@@ -1,6 +1,6 @@
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -17,7 +17,7 @@ class JobListing:
     company_info: str = ""
     keyword_score: float = 0.0
     summary: str = ""
-    slm_response: Optional[dict] = None  # structured extraction from LLM
+    slm_response: Optional[dict] = None
 
     def to_db_dict(self) -> dict:
         return {
@@ -37,37 +37,13 @@ class JobListing:
         }
 
 
-@dataclass
-class ApplicationResult:
-    success: bool
-    screenshots: list[str] = field(default_factory=list)
-    error_reason: Optional[str] = None
-    pending_review: bool = False
-
-
 class Searchable(ABC):
     @abstractmethod
     def search(self, terms: list[str], config: dict) -> list[JobListing]:
-        """Search site; return partial listings (no full JD yet)."""
         ...
 
 
 class Extractable(ABC):
     @abstractmethod
     def extract(self, listing: JobListing) -> JobListing:
-        """Fetch full JD + company info for a listing."""
         ...
-
-
-class Applyable(ABC):
-    @abstractmethod
-    def apply(
-        self, listing: JobListing, answers: dict, resume_path: str, mode: str = "extract"
-    ) -> ApplicationResult:
-        """Fill and submit application. Return result with screenshot paths."""
-        ...
-
-
-class BaseSiteSkill(Searchable, Extractable, Applyable):
-    """Convenience base for sites that implement all three interfaces."""
-    pass
